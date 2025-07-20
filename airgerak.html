@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Air Gerak - Tangki Animation</title>
+    <style>
+        body { display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f0f0; }
+        .svg-container { width: auto; height: auto; display: inline-block; position: relative; }
+        .svg-label-overlay { position: absolute; pointer-events: none; }
+        svg { width: 100%; height: 100%; }
+    </style>
+</head>
+<body>
+    <button id="toggle-annotate" style="position: absolute; top: 20px; right: 20px; z-index: 2000;">Toggle Annotation</button>
+    <div class="svg-container" id="svg-container"></div>
+    <script>
+    // Load tangki.svg inline for direct DOM manipulation
+    fetch('tangki.svg')
+      .then(response => response.text())
+      .then(svgText => {
+        document.getElementById('svg-container').innerHTML = svgText;
+        annotateSVGComponents();
+        animateWater();
+      });
+
+    let annotationEnabled = true;
+    document.getElementById('toggle-annotate').addEventListener('click', () => {
+      annotationEnabled = !annotationEnabled;
+      if (!annotationEnabled) {
+        // Remove overlays and lines
+        document.querySelectorAll('.svg-label-overlay').forEach(e => e.remove());
+        document.querySelectorAll('.svg-label-connector').forEach(e => e.remove());
+      } else {
+        annotateSVGComponents();
+      }
+    });
+
+    function annotateSVGComponents() {
+      if (!annotationEnabled) return;
+      const svg = document.querySelector('#svg-container svg');
+      if (!svg) return;
+      // Remove previous overlays if any
+      document.querySelectorAll('.svg-label-overlay').forEach(e => e.remove());
+      document.querySelectorAll('.svg-label-connector').forEach(e => e.remove());
+      // List all id attributes
+      const ids = Array.from(svg.querySelectorAll('[id]')).map(el => el.id);
+      console.log('SVG id attributes:', ids);
+      // List all data-cell-id attributes
+      const dataCellIds = Array.from(svg.querySelectorAll('[data-cell-id]')).map(el => el.getAttribute('data-cell-id'));
+      console.log('SVG data-cell-id attributes:', dataCellIds);
+      // Get all elements with id or data-cell-id
+      const elements = svg.querySelectorAll('[id], [data-cell-id]');
+      // Draw lines and labels
+      let fgSvg = document.getElementById('svg-annotation-fg');
+      if (!fgSvg) {
+        fgSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        fgSvg.setAttribute('id', 'svg-annotation-fg');
+        fgSvg.style.position = 'absolute';
+        fgSvg.style.left = '0';
+        fgSvg.style.top = '0';
+        fgSvg.style.width = '100vw';
+        fgSvg.style.height = '100vh';
+        fgSvg.style.pointerEvents = 'none';
+        fgSvg.style.zIndex = 999;
+        document.body.appendChild(fgSvg);
+      }
+      // Track label positions to avoid overlap
+      const placedLabels = [];
+      const labelHeight = 22; // px, estimated height of label
+      const labelSpacing = 4; // px, space between labels
+      elements.forEach((el, idx) => {
+        let label = el.id ? `id: ${el.id}` : '';
+        if (el.hasAttribute('data-cell-id')) {
+          if (label) label += ' | ';
+          label += `data-cell-id: ${el.getAttribute('data-cell-id')}`;
+        }
+        let bbox;
+        try {
+          bbox = el.getBBox();
+        } catch (e) {
+          return;
+        }
+        const svgRect = svg.getBoundingClientRect();
+        const scaleX = svgRect.width / svg.viewBox.baseVal.width;
+        const scaleY = svgRect.height / svg.viewBox.baseVal.height;
+        // Place label to the right outside the SVG
+        let labelX = svgRect.right + 20;
+        let labelY = svgRect.top + bbox.y * scaleY + window.scrollY;
+        // Adjust labelY to avoid overlap with previous labels
+        let tryY = labelY;
+        let tries = 0;
+        while (placedLabels.some(l => Math.abs(l - tryY) < labelHeight + labelSpacing) && tries < 100) {
+          tryY += labelHeight + labelSpacing;
+          tries++;
+        }
+        labelY = tryY;
+        placedLabels.push(labelY);
+        // Snap to top-right corner of bbox
+        const edgeX = svgRect.left + (bbox.x + bbox.width) * scaleX + window.scrollX;
+        const edgeY = svgRect.top + bbox.y * scaleY + window.scrollY;
+        // Create SVG line overlay
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', edgeX);
+        line.setAttribute('y1', edgeY);
+        line.setAttribute('x2', labelX);
+        line.setAttribute('y2', labelY + 10); // align with label text
+        line.setAttribute('stroke', '#f00');
+        line.setAttribute('stroke-width', '2');
+        line.setAttribute('class', 'svg-label-connector');
+        fgSvg.appendChild(line);
+        // Create overlay label
+        const overlay = document.createElement('div');
+        overlay.className = 'svg-label-overlay';
+        overlay.textContent = label;
+        overlay.style.position = 'absolute';
+        overlay.style.left = labelX + 'px';
+        overlay.style.top = labelY + 'px';
+        overlay.style.background = 'rgba(255,255,0,0.7)';
+        overlay.style.color = '#000';
+        overlay.style.fontSize = '12px';
+        overlay.style.padding = '2px 4px';
+        overlay.style.border = '1px solid #888';
+        overlay.style.borderRadius = '3px';
+        overlay.style.pointerEvents = 'none';
+        overlay.style.zIndex = 1000;
+        document.body.appendChild(overlay);
+      });
+      // If you want the lines to update for moving items, re-run annotation on each frame
+      requestAnimationFrame(annotateSVGComponents);
+    }
+
+    function animateWater() {
+      const svg = document.querySelector('#svg-container svg');
+      if (!svg) return;
+      // Find the water element by data-cell-id (g5S-KjVc2d7iTekGJwnO-4) and select the <rect> inside it
+      const waterGroup = svg.querySelector('[data-cell-id="g5S-KjVc2d7iTekGJwnO-4"]');
+      const water = waterGroup ? waterGroup.querySelector('rect') : null;
+      if (!water) {
+        console.warn('No <rect> with data-cell-id="g5S-KjVc2d7iTekGJwnO-4" found in tangki.svg. Please update the selector if needed.');
+        return;
+      }
+      // SVG water rect: x=20, y=120, width=200, height=160
+      const tankTopY = 120;
+      const tankHeight = 160;
+      const tankBottomY = tankTopY + tankHeight; // 280
+      let minHeight = 0, maxHeight = tankHeight;
+      let direction = 1;
+      let speed = 1;
+      let currentHeight = minHeight;
+      function step() {
+        currentHeight += direction * speed;
+        if (currentHeight >= maxHeight || currentHeight <= minHeight) direction *= -1;
+        // Water grows from bottom (y=280) up to top (y=120)
+        water.setAttribute('height', currentHeight);
+        water.setAttribute('y', tankBottomY - currentHeight);
+        requestAnimationFrame(step);
+      }
+      step();
+    }
+    </script>
+</body>
+</html>
